@@ -1,56 +1,96 @@
-pragma solidity ^0.4.19;
+pragma solidity ^0.4.20;
 
+contract CampaignFactory {
+    address[] public deployedCampaigns;
 
+    function createCampaign(uint minimum) public {
+        address newCampaign = new Campaign(minimum, msg.sender);
+        deployedCampaigns.push(newCampaign);
+    }
 
-contract kickstartCampaign {
-    
+    function getDeployedCampaigns() public view returns (address[]) {
+        return deployedCampaigns;
+    }
+}
+
+contract Campaign {
     struct Request {
         string description;
         uint value;
         address recipient;
         bool complete;
+        uint approvalCount;
         mapping(address => bool) approvals;
-        uint approvalsCount;
-        
     }
-    
-    modifier onlyManager() {
-        msg.sender == manager;
-        _;
-    }
-    
-    
+
+    Request[] public requests;
     address public manager;
     uint public minimumContribution;
-    Request[] public requests;
     mapping(address => bool) public approvers;
-    
-    
-    constructor kick(uint minimum) public {
-        msg.sender == manager;
+    uint public approversCount;
+
+    modifier restricted() {
+        require(msg.sender == manager);
+        _;
+    }
+
+    function Campaign(uint minimum, address creator) public {
+        manager = creator;
         minimumContribution = minimum;
-        
     }
-    
-    function contribute() public {
-        require(msg.value >= minimumContribution);
-        approvers[msg.sender] == true;
-        
+
+    function contribute() public payable {
+        require(msg.value > minimumContribution);
+
+        approvers[msg.sender] = true;
+        approversCount++;
     }
-    
-    function createRequest(string _description, uint _value, address _recipient) public onlyManager {
-        Request[] memory newRequest;
-        newRequest.description = _description;
-        newRequest.value = _value;
-        newRequest.recipient = _recipient;
-        newRequest.complete = false;
-        newRequest.approvalsCount = 0;
-        
-        
-        
+
+    function createRequest(string description, uint value, address recipient) public restricted {
+        Request memory newRequest = Request({
+           description: description,
+           value: value,
+           recipient: recipient,
+           complete: false,
+           approvalCount: 0
+        });
+
         requests.push(newRequest);
     }
-    
-  
 
+    function approveRequest(uint index) public {
+        Request storage request = requests[index];
+
+        require(approvers[msg.sender]);
+        require(!request.approvals[msg.sender]);
+
+        request.approvals[msg.sender] = true;
+        request.approvalCount++;
+    }
+
+    function finalizeRequest(uint index) public restricted {
+        Request storage request = requests[index];
+
+        require(request.approvalCount > (approversCount / 2));
+        require(!request.complete);
+
+        request.recipient.transfer(request.value);
+        request.complete = true;
+    }
+
+    function getSummary() public view returns (
+      uint, uint, uint, uint, address
+      ) {
+        return (
+          minimumContribution,
+          this.balance,
+          requests.length,
+          approversCount,
+          manager
+        );
+    }
+
+    function getRequestsCount() public view returns (uint) {
+        return requests.length;
+    }
 }
